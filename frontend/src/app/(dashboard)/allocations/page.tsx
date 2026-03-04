@@ -1,0 +1,420 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useAuth } from "@/components/providers/AuthProvider";
+import { useYearId } from "@/components/providers/YearProvider";
+import { api, type WorkloadAllocation, type Academic, type Department, type AcademicYear } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Plus, Save, X } from "lucide-react";
+
+export default function AllocationsPage() {
+  const { token } = useAuth();
+  const yearId = useYearId().yearId;
+  const [allocations, setAllocations] = useState<WorkloadAllocation[]>([]);
+  const [academics, setAcademics] = useState<Academic[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [years, setYears] = useState<AcademicYear[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [deptFilter, setDeptFilter] = useState<number | "">("");
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState({ teaching_hours: 0, research_hours: 0, admin_hours: 0, notes: "" });
+  const [showCreate, setShowCreate] = useState(false);
+  const [createForm, setCreateForm] = useState({ academic: 0, academic_year: yearId ?? 0, teaching_hours: 0, research_hours: 0, admin_hours: 0, notes: "" });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [viewAllocation, setViewAllocation] = useState<WorkloadAllocation | null>(null);
+
+  const selectedYear = years.find((y) => y.id === yearId);
+  const isLocked = selectedYear?.is_locked ?? false;
+
+  useEffect(() => {
+    if (!token) return;
+    api.departments.list(token).then((r) => setDepartments(r.results || []));
+    api.academics.list(token).then((r) => setAcademics(r.results || []));
+    api.years.list(token).then((r) => setYears(r.results || []));
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+    setLoading(true);
+    api.allocations.list(token, { year: yearId ?? undefined, dept: deptFilter || undefined }).then(
+      (r) => {
+        setAllocations(r.results || []);
+        setLoading(false);
+      },
+      () => setLoading(false)
+    );
+  }, [token, yearId, deptFilter]);
+
+  const startEdit = (a: WorkloadAllocation) => {
+    if (isLocked) return;
+    setEditingId(a.id);
+    setEditForm({
+      teaching_hours: Number(a.teaching_hours),
+      research_hours: Number(a.research_hours),
+      admin_hours: Number(a.admin_hours),
+      notes: a.notes || "",
+    });
+  };
+
+  const saveEdit = async () => {
+    if (!token || editingId == null) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await api.allocations.update(token, editingId, editForm);
+      setAllocations((prev) =>
+        prev.map((x) =>
+          x.id === editingId
+            ? {
+                ...x,
+                teaching_hours: String(editForm.teaching_hours),
+                research_hours: String(editForm.research_hours),
+                admin_hours: String(editForm.admin_hours),
+                notes: editForm.notes,
+              }
+            : x
+        )
+      );
+      setEditingId(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const createAllocation = async () => {
+    if (!token || !createForm.academic || !createForm.academic_year) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const created = await api.allocations.create(token, {
+        academic: createForm.academic,
+        academic_year: createForm.academic_year,
+        teaching_hours: createForm.teaching_hours,
+        research_hours: createForm.research_hours,
+        admin_hours: createForm.admin_hours,
+        notes: createForm.notes,
+      });
+      setAllocations((prev) => [...prev, created]);
+      setShowCreate(false);
+      setCreateForm((f) => ({ ...f, teaching_hours: 0, research_hours: 0, admin_hours: 0, notes: "" }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to create");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteAllocation = async (id: number) => {
+    if (!token || isLocked || !confirm("Delete this allocation?")) return;
+    try {
+      await api.allocations.delete(token, id);
+      setAllocations((prev) => prev.filter((a) => a.id !== id));
+      if (editingId === id) setEditingId(null);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed to delete");
+    }
+  };
+
+  if (!yearId) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-semibold">Allocations</h1>
+        <p className="text-muted-foreground">Select an academic year in the header.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <h1 className="text-2xl font-semibold tracking-tight">Allocations</h1>
+        {isLocked && (
+          <p className="text-sm text-amber-600 dark:text-amber-400">
+            This year is locked. Viewing only; create/edit/delete disabled.
+          </p>
+        )}
+        {!isLocked && (
+          <Button
+          onClick={() => {
+            setCreateForm((f) => ({ ...f, academic_year: yearId ?? 0 }));
+            setShowCreate(true);
+          }}
+        >
+            <Plus className="h-4 w-4 mr-1" />
+            Add allocation
+          </Button>
+        )}
+      </div>
+
+      <div className="flex items-center gap-2">
+        <span className="text-sm text-muted-foreground">Department:</span>
+        <select
+          className="rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+          value={deptFilter}
+          onChange={(e) => setDeptFilter(e.target.value === "" ? "" : Number(e.target.value))}
+        >
+          <option value="">All</option>
+          {departments.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {error && (
+        <p className="text-sm text-destructive">{error}</p>
+      )}
+
+      {showCreate && !isLocked && (
+        <Card>
+          <CardContent className="pt-6 space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div>
+                <label className="text-sm font-medium mb-1 block">Academic</label>
+                <select
+                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                  value={createForm.academic}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, academic: Number(e.target.value) }))}
+                >
+                  <option value={0}>Select</option>
+                  {academics.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.full_name} ({a.department_detail?.name})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-sm font-medium mb-1 block">Year</label>
+                <select
+                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                  value={createForm.academic_year}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, academic_year: Number(e.target.value) }))}
+                >
+                  {years.map((y) => (
+                    <option key={y.id} value={y.id}>
+                      {y.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-sm font-medium mb-1 block">Teaching</label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={createForm.teaching_hours || ""}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, teaching_hours: Number(e.target.value) || 0 }))}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium mb-1 block">Research</label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={createForm.research_hours || ""}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, research_hours: Number(e.target.value) || 0 }))}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium mb-1 block">Admin</label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={createForm.admin_hours || ""}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, admin_hours: Number(e.target.value) || 0 }))}
+                />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={createAllocation} disabled={saving || !createForm.academic || !createForm.academic_year}>
+                Create
+              </Button>
+              <Button variant="outline" onClick={() => setShowCreate(false)}>
+                Cancel
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <Card>
+        <CardContent className="p-0">
+          {loading ? (
+            <div className="p-6 space-y-3">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-md border overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="text-left p-3 font-medium">Academic</th>
+                    <th className="text-left p-3 font-medium">Year</th>
+                    <th className="text-right p-3 font-medium">Teaching</th>
+                    <th className="text-right p-3 font-medium">Research</th>
+                    <th className="text-right p-3 font-medium">Admin</th>
+                    <th className="text-right p-3 font-medium">Total</th>
+                    <th className="text-left p-3 font-medium">Status</th>
+                    <th className="w-32 p-3">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {allocations.map((a) => (
+                    <tr key={a.id} className="border-b last:border-0 hover:bg-muted/30">
+                      <td className="p-3">
+                        {a.academic_detail?.full_name ?? a.academic}
+                      </td>
+                      <td className="p-3 text-muted-foreground">
+                        {a.academic_year_detail?.label ?? a.academic_year}
+                      </td>
+                      {editingId === a.id ? (
+                        <>
+                          <td className="p-3">
+                            <Input
+                              type="number"
+                              min={0}
+                              className="w-20 h-8 text-right"
+                              value={editForm.teaching_hours}
+                              onChange={(e) => setEditForm((f) => ({ ...f, teaching_hours: Number(e.target.value) || 0 }))}
+                            />
+                          </td>
+                          <td className="p-3">
+                            <Input
+                              type="number"
+                              min={0}
+                              className="w-20 h-8 text-right"
+                              value={editForm.research_hours}
+                              onChange={(e) => setEditForm((f) => ({ ...f, research_hours: Number(e.target.value) || 0 }))}
+                            />
+                          </td>
+                          <td className="p-3">
+                            <Input
+                              type="number"
+                              min={0}
+                              className="w-20 h-8 text-right"
+                              value={editForm.admin_hours}
+                              onChange={(e) => setEditForm((f) => ({ ...f, admin_hours: Number(e.target.value) || 0 }))}
+                            />
+                          </td>
+                          <td className="p-3 text-right">—</td>
+                          <td className="p-3">—</td>
+                          <td className="p-3 flex gap-1">
+                            <Button variant="ghost" size="sm" onClick={saveEdit} disabled={saving}>
+                              <Save className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => setEditingId(null)}>
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="p-3 text-right">{a.teaching_hours}</td>
+                          <td className="p-3 text-right">{a.research_hours}</td>
+                          <td className="p-3 text-right">{a.admin_hours}</td>
+                          <td className="p-3 text-right">{a.total_hours ?? "—"}</td>
+                          <td className="p-3">
+                            {a.status && (
+                              <Badge
+                                variant={
+                                  a.status === "OVERLOADED"
+                                    ? "overloaded"
+                                    : a.status === "UNDERLOADED"
+                                      ? "underloaded"
+                                      : "balanced"
+                                }
+                              >
+                                {a.status}
+                              </Badge>
+                            )}
+                          </td>
+                          <td className="p-3 flex gap-1">
+                            <Button variant="ghost" size="sm" onClick={() => setViewAllocation(a)}>
+                              View
+                            </Button>
+                            {!isLocked && (
+                              <>
+                                <Button variant="ghost" size="sm" onClick={() => startEdit(a)}>
+                                  Edit
+                                </Button>
+                                <Button variant="ghost" size="sm" onClick={() => deleteAllocation(a.id)}>
+                                  Delete
+                                </Button>
+                              </>
+                            )}
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {viewAllocation && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={() => setViewAllocation(null)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <Card
+            className="max-w-md w-full mx-4 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <CardContent className="pt-6 space-y-3">
+              <div className="flex justify-between items-center">
+                <h3 className="font-semibold">Allocation details</h3>
+                <Button variant="ghost" size="sm" onClick={() => setViewAllocation(null)}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              <p><span className="text-muted-foreground">Academic:</span> {viewAllocation.academic_detail?.full_name ?? viewAllocation.academic}</p>
+              <p><span className="text-muted-foreground">Year:</span> {viewAllocation.academic_year_detail?.label ?? viewAllocation.academic_year}</p>
+              <p><span className="text-muted-foreground">Teaching / Research / Admin:</span> {viewAllocation.teaching_hours} / {viewAllocation.research_hours} / {viewAllocation.admin_hours}</p>
+              {viewAllocation.status && (
+                <p>
+                  <span className="text-muted-foreground">Status:</span>{" "}
+                  <Badge
+                    variant={
+                      viewAllocation.status === "OVERLOADED"
+                        ? "overloaded"
+                        : viewAllocation.status === "UNDERLOADED"
+                          ? "underloaded"
+                          : "balanced"
+                    }
+                  >
+                    {viewAllocation.status}
+                  </Badge>
+                </p>
+              )}
+              {(viewAllocation.created_by_username != null || viewAllocation.updated_at) && (
+                <p className="text-xs text-muted-foreground pt-2 border-t">
+                  {viewAllocation.created_by_username != null && <>Created by {viewAllocation.created_by_username}</>}
+                  {viewAllocation.created_by_username != null && viewAllocation.updated_at && " · "}
+                  {viewAllocation.updated_at && (
+                    <>Last updated {new Date(viewAllocation.updated_at).toLocaleString()}</>
+                  )}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}

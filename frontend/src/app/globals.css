@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 168 18% 98%;
+    --foreground: 172 30% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 172 30% 10%;
+    --primary: 172 68% 24%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 168 28% 93%;
+    --secondary-foreground: 172 28% 16%;
+    --muted: 168 18% 94%;
+    --muted-foreground: 172 12% 38%;
+    --accent: 168 32% 90%;
+    --accent-foreground: 172 68% 22%;
+    --destructive: 0 72% 51%;
+    --border: 168 14% 88%;
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 172 24% 6%;
+    --foreground: 168 18% 94%;
+    --card: 172 22% 9%;
+    --card-foreground: 168 18% 94%;
+    --primary: 166 52% 38%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 172 18% 16%;
+    --secondary-foreground: 168 18% 94%;
+    --muted: 172 16% 14%;
+    --muted-foreground: 168 10% 55%;
+    --accent: 172 16% 14%;
+    --accent-foreground: 166 52% 48%;
+    --destructive: 0 62% 45%;
+    --border: 172 14% 18%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
+/* Recharts: remove default bar stroke and hide tooltip cursor / bar background */
+.recharts-rectangle {
+  stroke: none !important;
+}
+.recharts-bar-background-rectangle,
+.recharts-tooltip-cursor {
+  fill: transparent !important;
+}
