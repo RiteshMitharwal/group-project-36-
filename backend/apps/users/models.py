@@ -19,5 +19,9 @@ class User(AbstractUser):
     email_verification_code = models.CharField(max_length=6, blank=True, default="")
     email_verification_expires_at = models.DateTimeField(null=True, blank=True)
 
+    # Forgot password flow
+    password_reset_code = models.CharField(max_length=6, blank=True, default="")
+    password_reset_expires_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         db_table = "auth_user"

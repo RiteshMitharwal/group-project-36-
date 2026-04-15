@@ -176,6 +176,9 @@ export interface Department {
 export interface Academic {
   id: number;
   user: number | null;
+  first_name: string;
+  last_name: string;
+  username: string;
   full_name: string;
   email: string;
   department: number;

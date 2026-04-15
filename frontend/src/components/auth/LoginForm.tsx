@@ -1,5 +1,5 @@
 "use client";
-
+import Link from "next/link";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -62,6 +62,11 @@ export function LoginForm() {
               required
               className="h-11 border-border focus-visible:ring-primary"
             />
+          </div>
+          <div className="flex justify-end">
+            <Link href="/forgot-password" className="text-sm text-primary hover:underline">
+              Forgot Password?
+            </Link>
           </div>
           {error && (
             <div className="space-y-1.5 rounded-lg bg-destructive/10 border border-destructive/20 p-3">

@@ -12,7 +12,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 
 type FormState = {
-  full_name: string;
+  first_name: string;
+  last_name: string;
+  username: string;
   email: string;
   department: number;
   capacity_hours: number;
@@ -28,7 +30,9 @@ export default function AcademicsPage() {
   const [editing, setEditing] = useState<Academic | null>(null);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<FormState>({
-    full_name: "",
+    first_name: "",
+    last_name: "",
+    username: "",
     email: "",
     department: 0,
     capacity_hours: 1500,
@@ -38,18 +42,69 @@ export default function AcademicsPage() {
   const [eligibilities, setEligibilities] = useState<Eligibility[]>([]);
   const [modules, setModules] = useState<Module[]>([]);
   const [eligibilityLoading, setEligibilityLoading] = useState(false);
-  const normalizedFullName = form.full_name.trim().toLowerCase();
-  const normalizedEmail = form.email.trim().toLowerCase();
+  
+  const [usernameTouched, setUsernameTouched] = useState(false);
 
-  const duplicateName = academics.some((a: Academic) => {
+  const normalizeValue = (value: string) => value.trim().toLowerCase();
+
+  const normalizedUsername = normalizeValue(form.username);
+  const normalizedEmail = normalizeValue(form.email);
+
+  const duplicateUsername = academics.some((a: Academic) => {
     if (editing && a.id === editing.id) return false;
-    return a.full_name.trim().toLowerCase() === normalizedFullName;
+    return normalizeValue(a.username) === normalizedUsername;
   });
 
   const duplicateEmail = academics.some((a: Academic) => {
     if (editing && a.id === editing.id) return false;
-    return a.email.trim().toLowerCase() === normalizedEmail;
+    return normalizeValue(a.email) === normalizedEmail;
   });
+
+  function buildUsernameCandidates(firstName: string, lastName: string) {
+    const first = firstName.trim();
+    const last = lastName.trim();
+
+    if (!first || !last) return [];
+
+    return [
+      `${first} ${last}`,
+      `${first}${last}`.replace(/\s+/g, "").toLowerCase(),
+      `${last}${first}`.replace(/\s+/g, "").toLowerCase(),
+    ];
+  }
+
+  function pickAvailableUsername(firstName: string, lastName: string, excludeId?: number) {
+    const firstRaw = firstName.trim();
+    const lastRaw = lastName.trim();
+
+    if (!firstRaw || !lastRaw) return "";
+
+    const taken = new Set(
+      academics
+        .filter((a: Academic) => (excludeId ? a.id !== excludeId : true))
+        .map((a: Academic) => normalizeValue(a.username))
+    );
+
+    const candidates = buildUsernameCandidates(firstRaw, lastRaw);
+
+    for (const candidate of candidates) {
+      if (!taken.has(normalizeValue(candidate))) {
+        return candidate;
+      }
+    }
+
+    const first = firstRaw.replace(/\s+/g, "").toLowerCase();
+    const last = lastRaw.replace(/\s+/g, "").toLowerCase();
+
+    for (let i = 100; i <= 999; i++) {
+      const candidate = `${first}${last}${i}`;
+      if (!taken.has(candidate)) {
+        return candidate;
+      }
+    }
+
+    return "";
+  }
 
   useEffect(() => {
     if (!token) return;
@@ -81,11 +136,24 @@ export default function AcademicsPage() {
     );
   }, [token, deptFilter]);
 
+  useEffect(() => {
+    if (usernameTouched) return;
+
+    const suggested = pickAvailableUsername(form.first_name, form.last_name, editing?.id);
+
+    if (suggested && suggested !== form.username) {
+      setForm((f: FormState) => ({ ...f, username: suggested }));
+    }
+  }, [form.first_name, form.last_name, academics, editing?.id, usernameTouched, form.username]);
+
   const openEdit = (a: Academic) => {
-   setFormError(null);
+    setFormError(null);
+    setUsernameTouched(true);
     setEditing(a);
     setForm({
-      full_name: a.full_name,
+      first_name: a.first_name ?? "",
+      last_name: a.last_name ?? "",
+      username: a.username ?? "",
       email: a.email,
       department: a.department,
       capacity_hours: a.capacity_hours,
@@ -95,10 +163,13 @@ export default function AcademicsPage() {
 
   const openCreate = () => {
     setFormError(null);
+    setUsernameTouched(false);
     setCreating(true);
     setEditing(null);
     setForm({
-      full_name: "",
+      first_name: "",
+      last_name: "",
+      username: "",
       email: "",
       department: departments[0]?.id ?? 0,
       capacity_hours: 1500,
@@ -111,12 +182,22 @@ export default function AcademicsPage() {
 
     setFormError(null);
 
-    if (!form.full_name.trim()) {
-      setFormError("Username/full name is required.");
+    if (!form.first_name.trim()) {
+      setFormError("First name is required.");
       return;
     }
 
-    if (duplicateName) {
+    if (!form.last_name.trim()) {
+      setFormError("Last name is required.");
+      return;
+    }
+
+    if (!form.username.trim()) {
+      setFormError("Username is required.");
+      return;
+    }
+
+    if (duplicateUsername) {
       setFormError("Username already exists. Try another one.");
       return;
     }
@@ -126,21 +207,31 @@ export default function AcademicsPage() {
       return;
     }
 
+    const payload = {
+      first_name: form.first_name.trim(),
+      last_name: form.last_name.trim(),
+      username: form.username.trim(),
+      email: form.email.trim(),
+      department: form.department,
+      capacity_hours: form.capacity_hours,
+      is_active: form.is_active,
+    };
+
     try {
       if (editing) {
-        await api.academics.update(token, editing.id, form);
+        const updated = await api.academics.update(token, editing.id, payload);
         setAcademics((prev: Academic[]) =>
-          prev.map((a: Academic) => (a.id === editing.id ? { ...a, ...form } : a))
+          prev.map((a: Academic) => (a.id === editing.id ? updated : a))
         );
         setEditing(null);
       } else if (creating) {
-        const created = await api.academics.create(token, form);
+        const created = await api.academics.create(token, payload);
         setAcademics((prev: Academic[]) => [...prev, created]);
         setCreating(false);
       }
-    
 
       setFormError(null);
+      setUsernameTouched(false);
     } catch (e) {
       setFormError(e instanceof Error ? e.message : "Failed to save");
     }
@@ -189,42 +280,71 @@ export default function AcademicsPage() {
           <CardContent className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>Full name</Label>
+                <Label>First name</Label>
                 <Input
-                  value={form.full_name}
+                  value={form.first_name}
                   onChange={(e) => {
                     const value = e.target.value;
-                    setForm((f: FormState) => ({ ...f, full_name: value }));
-
-                    if (formError) {
-                      setFormError(null);
-                    }
+                    setForm((f: FormState) => ({ ...f, first_name: value }));
+                    if (formError) setFormError(null);
                   }}
-                  placeholder="Full name"
+                  placeholder="First name"
                 />
+              </div>
 
-                {normalizedFullName && duplicateName && (
+              <div className="space-y-2">
+                <Label>Last name</Label>
+                <Input
+                  value={form.last_name}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setForm((f: FormState) => ({ ...f, last_name: value }));
+                    if (formError) setFormError(null);
+                  }}
+                  placeholder="Last name"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Username</Label>
+                <Input
+                  value={form.username}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setUsernameTouched(true);
+                    setForm((f: FormState) => ({ ...f, username: value }));
+                    if (formError) setFormError(null);
+                  }}
+                  placeholder="Username"
+                />
+                {normalizedUsername && duplicateUsername && (
                   <p className="mt-1 text-sm text-destructive">
                     Username already exists. Try another one.
                   </p>
                 )}
               </div>
+
               <div className="space-y-2">
                 <Label>Email</Label>
                 <Input
                   type="email"
                   value={form.email}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) => setForm((f: FormState) => ({ ...f, email: e.target.value }))}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                    setForm((f: FormState) => ({ ...f, email: e.target.value }))
+                  }
                   placeholder="email@example.com"
                   disabled={!!editing}
                 />
               </div>
+
               <div className="space-y-2">
                 <Label>Department</Label>
                 <select
                   className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
                   value={form.department}
-                  onChange={(e: ChangeEvent<HTMLSelectElement>) => setForm((f: FormState) => ({ ...f, department: Number(e.target.value) }))}
+                  onChange={(e: ChangeEvent<HTMLSelectElement>) =>
+                    setForm((f: FormState) => ({ ...f, department: Number(e.target.value) }))
+                  }
                 >
                   {departments.map((d: Department) => (
                     <option key={d.id} value={d.id}>
@@ -233,17 +353,23 @@ export default function AcademicsPage() {
                   ))}
                 </select>
               </div>
+
               <div className="space-y-2">
                 <Label>Capacity (hours)</Label>
                 <Input
                   type="number"
                   min={0}
                   value={form.capacity_hours}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) => setForm((f: FormState) => ({ ...f, capacity_hours: Number(e.target.value) || 0 }))}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                    setForm((f: FormState) => ({
+                      ...f,
+                      capacity_hours: Number(e.target.value) || 0,
+                    }))
+                  }
                 />
               </div>
             </div>
-            {formError && !duplicateName && (
+            {formError && !duplicateUsername && (
               <p className="text-sm text-destructive">{formError}</p>
             )}
             <div className="flex items-center gap-2">
@@ -374,7 +500,10 @@ export default function AcademicsPage() {
                 <tbody>
                   {academics.map((a: Academic) => (
                     <tr key={a.id} className="border-b last:border-0 hover:bg-muted/30">
-                      <td className="p-3">{a.full_name}</td>
+                      <td className="p-3">
+                        <div>{a.full_name}</div>
+                        <div className="text-xs text-muted-foreground">{a.username}</div>
+                      </td>
                       <td className="p-3 text-muted-foreground">{a.email}</td>
                       <td className="p-3">
                         {a.department_detail?.name ?? a.department}
