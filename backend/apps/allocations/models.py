@@ -4,6 +4,7 @@ from django.conf import settings
 from django.db import models
 
 from apps.academics.models import Academic
+from apps.modules.models import Module
 from apps.years.models import AcademicYear
 
 
@@ -47,3 +48,26 @@ class WorkloadAllocation(models.Model):
 
     def __str__(self):
         return f"{self.academic} - {self.academic_year}"
+
+
+class TeachingAllocationItem(models.Model):
+    workload_allocation = models.ForeignKey(
+        WorkloadAllocation,
+        on_delete=models.CASCADE,
+        related_name="teaching_items",
+    )
+    module = models.ForeignKey(
+        Module,
+        on_delete=models.CASCADE,
+        related_name="teaching_items",
+    )
+    percentage = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("100"))
+    calculated_hours = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0"))
+
+    class Meta:
+        db_table = "allocations_teachingallocationitem"
+        ordering = ["module__name"]
+        unique_together = [["workload_allocation", "module"]]
+
+    def __str__(self):
+        return f"{self.workload_allocation} - {self.module} ({self.percentage}%)"
