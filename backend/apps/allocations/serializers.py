@@ -1,7 +1,13 @@
+from decimal import Decimal
+
 from rest_framework import serializers
+
 from apps.academics.serializers import AcademicSerializer
+from apps.modules.models import Module
+from apps.modules.serializers import ModuleSerializer
 from apps.years.serializers import AcademicYearSerializer
-from .models import WorkloadAllocation
+
+from .models import WorkloadAllocation, TeachingAllocationItem
 from .services import (
     calculate_total_hours,
     calculate_utilisation,
@@ -10,9 +16,36 @@ from .services import (
 )
 
 
+class TeachingAllocationItemSerializer(serializers.ModelSerializer):
+    module_detail = ModuleSerializer(source="module", read_only=True)
+
+    class Meta:
+        model = TeachingAllocationItem
+        fields = [
+            "id",
+            "module",
+            "module_detail",
+            "percentage",
+            "calculated_hours",
+        ]
+
+
+class TeachingAllocationItemWriteSerializer(serializers.Serializer):
+    module = serializers.IntegerField()
+    percentage = serializers.DecimalField(max_digits=5, decimal_places=2)
+
+    def validate_percentage(self, value):
+        if value < 0:
+            raise serializers.ValidationError("Percentage cannot be negative.")
+        if value > 100:
+            raise serializers.ValidationError("Percentage cannot exceed 100.")
+        return value
+
+
 class WorkloadAllocationSerializer(serializers.ModelSerializer):
     academic_detail = AcademicSerializer(source="academic", read_only=True)
     academic_year_detail = AcademicYearSerializer(source="academic_year", read_only=True)
+    teaching_items = TeachingAllocationItemSerializer(many=True, read_only=True)
     total_hours = serializers.SerializerMethodField()
     utilisation = serializers.SerializerMethodField()
     difference = serializers.SerializerMethodField()
@@ -31,6 +64,7 @@ class WorkloadAllocationSerializer(serializers.ModelSerializer):
             "research_hours",
             "admin_hours",
             "notes",
+            "teaching_items",
             "total_hours",
             "utilisation",
             "difference",
@@ -79,6 +113,8 @@ class WorkloadAllocationSerializer(serializers.ModelSerializer):
 
 
 class WorkloadAllocationWriteSerializer(serializers.ModelSerializer):
+    teaching_items = TeachingAllocationItemWriteSerializer(many=True, required=False)
+
     class Meta:
         model = WorkloadAllocation
         fields = [
@@ -89,12 +125,8 @@ class WorkloadAllocationWriteSerializer(serializers.ModelSerializer):
             "research_hours",
             "admin_hours",
             "notes",
+            "teaching_items",
         ]
-
-    def validate_teaching_hours(self, value):
-        if value is not None and value < 0:
-            raise serializers.ValidationError("Teaching hours cannot be negative.")
-        return value
 
     def validate_research_hours(self, value):
         if value is not None and value < 0:
@@ -107,13 +139,101 @@ class WorkloadAllocationWriteSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
-        academic = attrs.get("academic")
-        academic_year = attrs.get("academic_year")
+        academic = attrs.get("academic", getattr(self.instance, "academic", None))
+        academic_year = attrs.get("academic_year", getattr(self.instance, "academic_year", None))
+        teaching_items = attrs.get("teaching_items", None)
+
         if academic and academic_year:
             if WorkloadAllocation.objects.filter(
-                academic=academic, academic_year=academic_year
+                academic=academic,
+                academic_year=academic_year,
             ).exclude(pk=self.instance.pk if self.instance else None).exists():
                 raise serializers.ValidationError(
                     "An allocation already exists for this academic and year."
                 )
+
+        if teaching_items is not None:
+            total_percentage = sum(Decimal(str(item["percentage"])) for item in teaching_items)
+            if total_percentage != Decimal("100"):
+                raise serializers.ValidationError(
+                    {"teaching_items": f"Total teaching allocation must be exactly 100%. Current total: {total_percentage}%"}
+                )
+
+            seen_modules = set()
+            for item in teaching_items:
+                module_id = item["module"]
+                if module_id in seen_modules:
+                    raise serializers.ValidationError(
+                        {"teaching_items": "The same module cannot be added more than once."}
+                    )
+                seen_modules.add(module_id)
+
+                try:
+                    module = Module.objects.select_related("department").get(pk=module_id)
+                except Module.DoesNotExist:
+                    raise serializers.ValidationError(
+                        {"teaching_items": f"Module with id {module_id} does not exist."}
+                    )
+
+                if academic and module.department_id != academic.department_id:
+                    raise serializers.ValidationError(
+                        {"teaching_items": "Module and academic must belong to the same department."}
+                    )
+
         return attrs
+
+    def _calculate_module_hours(self, module: Module, percentage: Decimal) -> Decimal:
+        return Decimal(str(module.credit_hours)) * (percentage / Decimal("100"))
+
+    def create(self, validated_data):
+        teaching_items = validated_data.pop("teaching_items", [])
+        validated_data["teaching_hours"] = Decimal("0")
+
+        allocation = WorkloadAllocation.objects.create(**validated_data)
+
+        total_teaching = Decimal("0")
+        for item in teaching_items:
+            module = Module.objects.get(pk=item["module"])
+            percentage = Decimal(str(item["percentage"]))
+            calculated_hours = self._calculate_module_hours(module, percentage)
+
+            TeachingAllocationItem.objects.create(
+                workload_allocation=allocation,
+                module=module,
+                percentage=percentage,
+                calculated_hours=calculated_hours,
+            )
+            total_teaching += calculated_hours
+
+        allocation.teaching_hours = total_teaching
+        allocation.save(update_fields=["teaching_hours"])
+
+        return allocation
+
+    def update(self, instance, validated_data):
+        teaching_items = validated_data.pop("teaching_items", None)
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+
+        if teaching_items is not None:
+            instance.teaching_items.all().delete()
+
+            total_teaching = Decimal("0")
+            for item in teaching_items:
+                module = Module.objects.get(pk=item["module"])
+                percentage = Decimal(str(item["percentage"]))
+                calculated_hours = self._calculate_module_hours(module, percentage)
+
+                TeachingAllocationItem.objects.create(
+                    workload_allocation=instance,
+                    module=module,
+                    percentage=percentage,
+                    calculated_hours=calculated_hours,
+                )
+                total_teaching += calculated_hours
+
+            instance.teaching_hours = total_teaching
+
+        instance.save()
+        return instance

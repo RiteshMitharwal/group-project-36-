@@ -1,27 +1,13 @@
-from rest_framework import status
+from django.db.models import Q
 from rest_framework.generics import ListCreateAPIView, RetrieveUpdateDestroyAPIView
-from rest_framework.response import Response
+
 from apps.users.permissions import IsAdminRole
 
-from apps.years.models import AcademicYear
 from .models import WorkloadAllocation
 from .serializers import WorkloadAllocationSerializer, WorkloadAllocationWriteSerializer
 
-LOCKED_MESSAGE = "This academic year is locked. Viewing only."
 
-
-def allocation_year_locked_response():
-    return Response({"detail": LOCKED_MESSAGE}, status=status.HTTP_423_LOCKED)
-
-
-def is_year_locked(academic_year_id: int) -> bool:
-    try:
-        return AcademicYear.objects.get(pk=academic_year_id).is_locked
-    except AcademicYear.DoesNotExist:
-        return False
-
-
-class AllocationListCreateView(ListCreateAPIView):
+class WorkloadAllocationListCreateView(ListCreateAPIView):
     permission_classes = [IsAdminRole]
 
     def get_queryset(self):
@@ -30,56 +16,56 @@ class AllocationListCreateView(ListCreateAPIView):
             "academic__department",
             "academic_year",
             "created_by",
-        ).all()
-        year = self.request.query_params.get("year")
-        dept = self.request.query_params.get("dept")
+        ).prefetch_related(
+            "teaching_items",
+            "teaching_items__module",
+            "teaching_items__module__department",
+        )
+
+        department = self.request.query_params.get("department")
+        if department:
+            qs = qs.filter(academic__department_id=department)
+
         academic = self.request.query_params.get("academic")
-        if year:
-            qs = qs.filter(academic_year_id=year)
-        if dept:
-            qs = qs.filter(academic__department_id=dept)
         if academic:
             qs = qs.filter(academic_id=academic)
-        return qs
+
+        academic_year = self.request.query_params.get("academic_year")
+        if academic_year:
+            qs = qs.filter(academic_year_id=academic_year)
+
+        search = (self.request.query_params.get("search") or "").strip()
+        if search:
+            qs = qs.filter(
+                Q(academic__full_name__icontains=search)
+                | Q(academic_year__label__icontains=search)
+            )
+
+        return qs.order_by("-updated_at", "academic__full_name")
 
     def get_serializer_class(self):
         if self.request.method == "POST":
             return WorkloadAllocationWriteSerializer
         return WorkloadAllocationSerializer
 
-    def create(self, request, *args, **kwargs):
-        academic_year_id = request.data.get("academic_year")
-        if academic_year_id and is_year_locked(academic_year_id):
-            return allocation_year_locked_response()
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        instance = serializer.save(created_by=request.user)
-        read_serializer = WorkloadAllocationSerializer(instance)
-        return Response(read_serializer.data, status=status.HTTP_201_CREATED)
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
 
 
-class AllocationDetailView(RetrieveUpdateDestroyAPIView):
+class WorkloadAllocationDetailView(RetrieveUpdateDestroyAPIView):
+    permission_classes = [IsAdminRole]
     queryset = WorkloadAllocation.objects.select_related(
         "academic",
         "academic__department",
         "academic_year",
         "created_by",
+    ).prefetch_related(
+        "teaching_items",
+        "teaching_items__module",
+        "teaching_items__module__department",
     )
-    permission_classes = [IsAdminRole]
 
     def get_serializer_class(self):
-        if self.request.method in ("PATCH", "PUT"):
+        if self.request.method in ["PUT", "PATCH"]:
             return WorkloadAllocationWriteSerializer
         return WorkloadAllocationSerializer
-
-    def update(self, request, *args, **kwargs):
-        obj = self.get_object()
-        if obj.academic_year.is_locked:
-            return allocation_year_locked_response()
-        return super().update(request, *args, **kwargs)
-
-    def destroy(self, request, *args, **kwargs):
-        obj = self.get_object()
-        if obj.academic_year.is_locked:
-            return allocation_year_locked_response()
-        return super().destroy(request, *args, **kwargs)

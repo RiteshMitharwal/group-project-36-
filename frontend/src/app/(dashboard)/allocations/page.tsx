@@ -3,13 +3,13 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useYearId } from "@/components/providers/YearProvider";
-import { api, type WorkloadAllocation, type Academic, type Department, type AcademicYear } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, Save, X } from "lucide-react";
+import { api, type Academic, type AcademicYear, type Department, type Module, type WorkloadAllocation } from "@/lib/api";
 
 export default function AllocationsPage() {
   const { token } = useAuth();
@@ -27,6 +27,16 @@ export default function AllocationsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [viewAllocation, setViewAllocation] = useState<WorkloadAllocation | null>(null);
+  const [teachingItems, setTeachingItems] = useState<
+    { module: number; percentage: number }[]
+  >([{ module: 0, percentage: 100 }]);
+
+  const [modules, setModules] = useState<Module[]>([]);
+  const [eligibleModules, setEligibleModules] = useState<Module[]>([]);
+  const totalTeachingPercentage = teachingItems.reduce(
+    (sum, item) => sum + (Number(item.percentage) || 0),
+    0
+  );
 
   const selectedYear = years.find((y) => y.id === yearId);
   const isLocked = selectedYear?.is_locked ?? false;

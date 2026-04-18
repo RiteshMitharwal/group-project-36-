@@ -1,7 +1,7 @@
 from django.urls import path
-from .views import AllocationListCreateView, AllocationDetailView
+from .views import WorkloadAllocationListCreateView, WorkloadAllocationDetailView
 
 urlpatterns = [
-    path("allocations", AllocationListCreateView.as_view(), name="allocation-list"),
-    path("allocations/<int:pk>", AllocationDetailView.as_view(), name="allocation-detail"),
+    path("allocations/", WorkloadAllocationListCreateView.as_view()),
+    path("allocations/<int:pk>/", WorkloadAllocationDetailView.as_view()),
 ]
