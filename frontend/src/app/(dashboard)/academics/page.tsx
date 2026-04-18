@@ -114,7 +114,7 @@ export default function AcademicsPage() {
   useEffect(() => {
     if (!token || !editing) return;
     setEligibilityLoading(true);
-    api.eligibility.list(token, editing.id).then(
+    api.eligibility.list(token, { academic: editing.id }).then(
       (r) => {
         setEligibilities(r.results || []);
         setEligibilityLoading(false);
@@ -447,7 +447,7 @@ export default function AcademicsPage() {
                               ...prev,
                               { id: 0, academic: editing.id, module: moduleId, module_detail: mod },
                             ]);
-                            const list = await api.eligibility.list(token, editing.id);
+                            const list = await api.eligibility.list(token, { academic: editing.id });
                             setEligibilities(list.results || []);
                           } catch (err) {
                             alert(err instanceof Error ? err.message : "Failed to add");

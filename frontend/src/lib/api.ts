@@ -81,16 +81,39 @@ export const api = {
     eligibleModules: (token: string, academicId: number) =>
       request<Module[]>(`/api/academics/${academicId}/eligible-modules`, { token }),
   },
-  eligibility: {
-    list: (token: string, academicId?: number) =>
-      request<{ results: Eligibility[] }>(
-        `/api/eligibility${academicId != null ? `?academic=${academicId}` : ""}`,
+    eligibility: {
+    list: (
+      token: string,
+      params?: {
+        academic?: number;
+        module?: number;
+      }
+    ) => {
+      const search = new URLSearchParams();
+
+      if (params?.academic) search.set("academic", String(params.academic));
+      if (params?.module) search.set("module", String(params.module));
+
+      const query = search.toString();
+
+      return request<{ results: Eligibility[] }>(
+        `/api/eligibility${query ? `?${query}` : ""}`,
         { token }
-      ),
+      );
+    },
+
     create: (token: string, data: { academic: number; module: number }) =>
-      request<Eligibility>("/api/eligibility", { method: "POST", body: data, token }),
+      request<Eligibility>("/api/eligibility", {
+        method: "POST",
+        body: data,
+        token,
+      }),
+
     delete: (token: string, id: number) =>
-      request(`/api/eligibility/${id}`, { method: "DELETE", token }),
+      request(`/api/eligibility/${id}`, {
+        method: "DELETE",
+        token,
+      }),
   },
   modules: {
     list: (token: string, params?: { search?: string; ordering?: string }) => {
@@ -108,23 +131,49 @@ export const api = {
       request(`/api/modules/${id}`, { method: "DELETE", token }),
   },
   allocations: {
-    list: (token: string, params?: { year?: number; dept?: number; academic?: number }) => {
-      const q = new URLSearchParams();
-      if (params?.year) q.set("year", String(params.year));
-      if (params?.dept) q.set("dept", String(params.dept));
-      if (params?.academic) q.set("academic", String(params.academic));
-      const query = q.toString();
+    list: (
+      token: string,
+      params?: {
+        department?: number;
+        academic?: number;
+        academic_year?: number;
+        search?: string;
+      }
+    ) => {
+      const searchParams = new URLSearchParams();
+
+      if (params?.department) searchParams.set("department", String(params.department));
+      if (params?.academic) searchParams.set("academic", String(params.academic));
+      if (params?.academic_year) searchParams.set("academic_year", String(params.academic_year));
+      if (params?.search) searchParams.set("search", params.search);
+
+      const query = searchParams.toString();
+
       return request<{ results: WorkloadAllocation[] }>(
-        `/api/allocations${query ? `?${query}` : ""}`,
+        `/api/allocations/${query ? `?${query}` : ""}`,
         { token }
       );
     },
-    create: (token: string, data: AllocationWrite) =>
-      request<WorkloadAllocation>("/api/allocations", { method: "POST", body: data, token }),
-    update: (token: string, id: number, data: Partial<AllocationWrite>) =>
-      request<WorkloadAllocation>(`/api/allocations/${id}`, { method: "PATCH", body: data, token }),
+
+    create: (token: string, body: AllocationWrite) =>
+      request<WorkloadAllocation>("/api/allocations/", {
+        method: "POST",
+        token,
+        body,
+      }),
+
+    update: (token: string, id: number, body: Partial<AllocationWrite>) =>
+      request<WorkloadAllocation>(`/api/allocations/${id}/`, {
+        method: "PATCH",
+        token,
+        body,
+      }),
+
     delete: (token: string, id: number) =>
-      request(`/api/allocations/${id}`, { method: "DELETE", token }),
+      request(`/api/allocations/${id}/`, {
+        method: "DELETE",
+        token,
+      }),
   },
     moduleTeachingAllocations: {
     list: (
@@ -286,14 +335,20 @@ export interface WorkloadAllocation {
   updated_at?: string | null;
 }
 
-export interface AllocationWrite {
+export type AllocationTeachingItemWrite = {
+  module: number;
+  percentage: number;
+};
+
+export type AllocationWrite = {
   academic: number;
   academic_year: number;
   teaching_hours: number;
   research_hours: number;
   admin_hours: number;
-  notes?: string;
-}
+  notes: string;
+  teaching_items?: AllocationTeachingItemWrite[];
+};
 
 export interface AdminSummary {
   department_summary: Array<{

@@ -9,7 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, Save, X } from "lucide-react";
-import { api, type Academic, type AcademicYear, type Department, type Module, type WorkloadAllocation } from "@/lib/api";
+import { api, type WorkloadAllocation, type Academic, type Department, type AcademicYear, type Module, type Eligibility } from "@/lib/api";
 
 export default function AllocationsPage() {
   const { token } = useAuth();
@@ -30,28 +30,41 @@ export default function AllocationsPage() {
   const [teachingItems, setTeachingItems] = useState<
     { module: number; percentage: number }[]
   >([{ module: 0, percentage: 100 }]);
+  const [eligibilities, setEligibilities] = useState<Eligibility[]>([]);
 
   const [modules, setModules] = useState<Module[]>([]);
   const [eligibleModules, setEligibleModules] = useState<Module[]>([]);
-  const totalTeachingPercentage = teachingItems.reduce(
-    (sum, item) => sum + (Number(item.percentage) || 0),
-    0
-  );
+  
+
+  const calculatedTeachingHours = teachingItems.reduce((sum, item) => {
+    const module = modules.find((m) => m.id === item.module);
+    if (!module) return sum;
+
+    const hours = Number(module.credit_hours || 0) * ((Number(item.percentage) || 0) / 100);
+    return sum + hours;
+  }, 0);
 
   const selectedYear = years.find((y) => y.id === yearId);
   const isLocked = selectedYear?.is_locked ?? false;
+  const selectedAcademic = academics.find((a) => a.id === createForm.academic);
 
   useEffect(() => {
     if (!token) return;
+
     api.departments.list(token).then((r) => setDepartments(r.results || []));
     api.academics.list(token).then((r) => setAcademics(r.results || []));
+    api.eligibility.list(token).then((r) => setEligibilities(r.results || []));
     api.years.list(token).then((r) => setYears(r.results || []));
+    api.modules.list(token).then((r) => setModules(r.results || []));
   }, [token]);
 
   useEffect(() => {
     if (!token) return;
     setLoading(true);
-    api.allocations.list(token, { year: yearId ?? undefined, dept: deptFilter || undefined }).then(
+    api.allocations.list(token, {
+      academic_year: yearId ?? undefined,
+      department: deptFilter || undefined,
+    }).then(
       (r) => {
         setAllocations(r.results || []);
         setLoading(false);
@@ -59,6 +72,38 @@ export default function AllocationsPage() {
       () => setLoading(false)
     );
   }, [token, yearId, deptFilter]);
+
+  useEffect(() => {
+    if (!selectedAcademic) {
+      setEligibleModules([]);
+      return;
+    }
+
+    const departmentModules = modules.filter(
+      (m) => m.department === selectedAcademic.department
+    );
+
+    const academicEligibilities = eligibilities.filter(
+      (e) => e.academic === selectedAcademic.id
+    );
+
+    if (academicEligibilities.length === 0) {
+      setEligibleModules(departmentModules);
+      return;
+    }
+
+    const eligibleModuleIds = new Set(
+      academicEligibilities.map((e) => e.module)
+    );
+
+    setEligibleModules(
+      departmentModules.filter((m) => eligibleModuleIds.has(m.id))
+    );
+  }, [selectedAcademic, modules, eligibilities]);
+
+  useEffect(() => {
+    setTeachingItems([{ module: 0, percentage: 100 }]);
+  }, [createForm.academic]);
 
   const startEdit = (a: WorkloadAllocation) => {
     if (isLocked) return;
@@ -70,6 +115,13 @@ export default function AllocationsPage() {
       notes: a.notes || "",
     });
   };
+
+  useEffect(() => {
+    setCreateForm((prev) => ({
+      ...prev,
+      teaching_hours: Number(calculatedTeachingHours.toFixed(2)),
+    }));
+  }, [calculatedTeachingHours]);
 
   const saveEdit = async () => {
     if (!token || editingId == null) return;
@@ -98,22 +150,62 @@ export default function AllocationsPage() {
     }
   };
 
+  const resetCreateForm = () => {
+    setCreateForm({
+      academic: 0,
+      academic_year: yearId ?? 0,
+      teaching_hours: 0,
+      research_hours: 0,
+      admin_hours: 0,
+      notes: "",
+    });
+
+    setTeachingItems([{ module: 0, percentage: 100 }]);
+    setEligibleModules([]);
+  };
+
+  const refreshAllocations = async () => {
+    if (!token) return;
+
+    setLoading(true);
+    try {
+      const res = await api.allocations.list(token, {
+        department: deptFilter || undefined,
+        academic_year: yearId || undefined,
+      });
+      setAllocations(res.results || []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load allocations");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const createAllocation = async () => {
     if (!token || !createForm.academic || !createForm.academic_year) return;
+
     setSaving(true);
     setError(null);
+
     try {
-      const created = await api.allocations.create(token, {
+      await api.allocations.create(token, {
         academic: createForm.academic,
         academic_year: createForm.academic_year,
         teaching_hours: createForm.teaching_hours,
         research_hours: createForm.research_hours,
         admin_hours: createForm.admin_hours,
         notes: createForm.notes,
+        teaching_items: teachingItems
+          .filter((item) => item.module)
+          .map((item) => ({
+            module: item.module,
+            percentage: item.percentage,
+          })),
       });
-      setAllocations((prev) => [...prev, created]);
+
+      await refreshAllocations();
+      resetCreateForm();
       setShowCreate(false);
-      setCreateForm((f) => ({ ...f, teaching_hours: 0, research_hours: 0, admin_hours: 0, notes: "" }));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to create");
     } finally {
@@ -216,14 +308,80 @@ export default function AllocationsPage() {
                   ))}
                 </select>
               </div>
-              <div>
-                <label className="text-sm font-medium mb-1 block">Teaching</label>
-                <Input
-                  type="number"
-                  min={0}
-                  value={createForm.teaching_hours || ""}
-                  onChange={(e) => setCreateForm((f) => ({ ...f, teaching_hours: Number(e.target.value) || 0 }))}
-                />
+              <div className="space-y-3">
+                <label>Teaching Allocation</label>
+
+                {teachingItems.map((row, index) => (
+                  <div key={index} className="flex gap-2 items-center">
+                    <select
+                      className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                      value={row.module}
+                      onChange={(e) => {
+                        const updated = [...teachingItems];
+                        updated[index].module = Number(e.target.value);
+                        setTeachingItems(updated);
+                      }}
+                    >
+                      <option value={0}>Select Module</option>
+                      {eligibleModules.map((m: Module) => (
+                        <option key={m.id} value={m.id}>
+                          {m.code ? `${m.code} - ${m.name}` : m.name}
+                        </option>
+                      ))}
+                    </select>
+
+                    <Input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={row.percentage}
+                      onChange={(e) => {
+                        const updated = [...teachingItems];
+                        updated[index].percentage = Number(e.target.value) || 0;
+                        setTeachingItems(updated);
+                      }}
+                      className="w-28"
+                    />
+
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      onClick={() => {
+                        if (teachingItems.length === 1) {
+                          setTeachingItems([{ module: 0, percentage: 100 }]);
+                          return;
+                        }
+                        setTeachingItems((prev) => prev.filter((_, i) => i !== index));
+                      }}
+                    >
+                      X
+                    </Button>
+                  </div>
+                ))}
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() =>
+                    setTeachingItems((prev) => [...prev, { module: 0, percentage: 100 }])
+                  }
+                >
+                  + Add Module
+                </Button>
+
+                
+
+                {!createForm.academic && (
+                  <p className="text-sm text-muted-foreground">
+                    Select an academic first to see eligible modules.
+                  </p>
+                )}
+
+                {createForm.academic && eligibleModules.length === 0 && (
+                  <p className="text-sm text-destructive">
+                    No eligible modules found for the selected academic.
+                  </p>
+                )}
               </div>
               <div>
                 <label className="text-sm font-medium mb-1 block">Research</label>
@@ -248,7 +406,13 @@ export default function AllocationsPage() {
               <Button onClick={createAllocation} disabled={saving || !createForm.academic || !createForm.academic_year}>
                 Create
               </Button>
-              <Button variant="outline" onClick={() => setShowCreate(false)}>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  resetCreateForm();
+                  setShowCreate(false);
+                }}
+              >
                 Cancel
               </Button>
             </div>
