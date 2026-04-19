@@ -296,6 +296,11 @@ export const api = {
         method: "DELETE",
         token,
       }),
+    byAcademic: (token: string, academicId: number) =>
+      request<{ results: WorkloadAllocation[] }>(
+        `/api/allocations/?academic=${academicId}`,
+        { token }
+      ),
   },
     moduleTeachingAllocations: {
     list: (

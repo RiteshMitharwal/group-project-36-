@@ -43,6 +43,8 @@ export default function AllocationsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [viewAllocation, setViewAllocation] = useState<WorkloadAllocation | null>(null);
+  const [academicHistory, setAcademicHistory] = useState<WorkloadAllocation[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [teachingItems, setTeachingItems] = useState<
     { module: number; percentage: number }[]
   >([{ module: 0, percentage: 100 }]);
@@ -234,6 +236,25 @@ export default function AllocationsPage() {
     setResearchItems([{ research_role: 0, percentage: 100 }]);
     setAdminItems([{ admin_role: 0, percentage: 100 }]);
   }, [createForm.academic]);
+
+  useEffect(() => {
+    if (!token || !createForm.academic) {
+      setAcademicHistory([]);
+      return;
+    }
+
+    setHistoryLoading(true);
+    api.allocations
+      .byAcademic(token, createForm.academic)
+      .then((res) => {
+        const items = (res.results || [])
+          .filter((x) => x.academic_year !== createForm.academic_year)
+          .sort((a, b) => b.academic_year - a.academic_year);
+        setAcademicHistory(items);
+      })
+      .catch(() => setAcademicHistory([]))
+      .finally(() => setHistoryLoading(false));
+  }, [token, createForm.academic, createForm.academic_year]);
 
   const startEdit = (a: WorkloadAllocation) => {
     if (isLocked) return;
@@ -684,6 +705,69 @@ export default function AllocationsPage() {
                 )}
               </div>
             </div>
+            {createForm.academic > 0 && (
+              <div className="rounded-lg border p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <h3 className="font-medium">Previous workload history</h3>
+                  {historyLoading && (
+                    <span className="text-xs text-muted-foreground">Loading...</span>
+                  )}
+                </div>
+
+                {academicHistory.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="p-2 text-left">Year</th>
+                          <th className="p-2 text-right">Teaching</th>
+                          <th className="p-2 text-right">Research</th>
+                          <th className="p-2 text-right">Admin</th>
+                          <th className="p-2 text-right">Total</th>
+                          <th className="p-2 text-left">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {academicHistory.slice(0, 5).map((h) => (
+                          <tr key={h.id} className="border-b last:border-0">
+                            <td className="p-2">
+                              {h.academic_year_detail?.label ??
+                                h.academic_year_detail?.year_name ??
+                                h.academic_year}
+                            </td>
+                            <td className="p-2 text-right">{h.teaching_hours}</td>
+                            <td className="p-2 text-right">{h.research_hours}</td>
+                            <td className="p-2 text-right">{h.admin_hours}</td>
+                            <td className="p-2 text-right">{h.total_hours ?? "—"}</td>
+                            <td className="p-2">
+                              {h.status ? (
+                                <Badge
+                                  variant={
+                                    h.status === "OVERLOADED"
+                                      ? "overloaded"
+                                      : h.status === "UNDERLOADED"
+                                        ? "underloaded"
+                                        : "balanced"
+                                  }
+                                >
+                                  {h.status}
+                                </Badge>
+                              ) : (
+                                "—"
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No previous workload history found for this academic.
+                  </p>
+                )}
+              </div>
+            )}
             <div className="flex gap-2">
               <Button onClick={createAllocation} disabled={saving || !createForm.academic || !createForm.academic_year}>
                 Create
