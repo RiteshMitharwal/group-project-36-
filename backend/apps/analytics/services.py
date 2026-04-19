@@ -168,7 +168,7 @@ def get_module_teaching_hours_for_academic(academic_id: int, academic_year_id: i
     return total
 
 def get_academic_my_workload(user_id: int, academic_year_id: int) -> Optional[Dict[str, Any]]:
-    """Single academic's workload for the year (for logged-in academic)."""
+    """Single academic's workload for the year (for logged-in academic), including detailed item breakdown."""
     try:
         academic = Academic.objects.get(user_id=user_id)
     except Academic.DoesNotExist:
@@ -177,24 +177,90 @@ def get_academic_my_workload(user_id: int, academic_year_id: int) -> Optional[Di
     allocation = WorkloadAllocation.objects.filter(
         academic=academic,
         academic_year_id=academic_year_id,
-    ).select_related("academic_year").first()
+    ).select_related("academic_year").prefetch_related(
+        "teaching_items",
+        "teaching_items__module",
+        "research_items",
+        "research_items__research_role",
+        "admin_items",
+        "admin_items__admin_role",
+    ).first()
 
-    teaching_hours = get_module_teaching_hours_for_academic(academic.id, academic_year_id)
-    research_hours = allocation.research_hours if allocation else Decimal("0")
-    admin_hours = allocation.admin_hours if allocation else Decimal("0")
+    if not allocation:
+        return {
+            "academic_id": academic.id,
+            "academic_year_id": academic_year_id,
+            "teaching_hours": 0,
+            "research_hours": 0,
+            "admin_hours": 0,
+            "total_hours": 0,
+            "capacity_hours": academic.capacity_hours,
+            "utilisation": 0.0,
+            "difference": -academic.capacity_hours,
+            "status": "UNDERLOADED",
+            "teaching_items": [],
+            "research_items": [],
+            "admin_items": [],
+        }
 
     total = calculate_total_hours(
-        teaching_hours,
-        research_hours,
-        admin_hours,
+        allocation.teaching_hours,
+        allocation.research_hours,
+        allocation.admin_hours,
     )
+
+    teaching_items = [
+        {
+            "id": item.id,
+            "module": item.module_id,
+            "module_detail": {
+                "id": item.module.id,
+                "code": item.module.code,
+                "name": item.module.name,
+                "credit_hours": item.module.credit_hours,
+            },
+            "percentage": float(item.percentage),
+            "calculated_hours": float(item.calculated_hours),
+        }
+        for item in allocation.teaching_items.all()
+    ]
+
+    research_items = [
+        {
+            "id": item.id,
+            "research_role": item.research_role_id,
+            "research_role_detail": {
+                "id": item.research_role.id,
+                "name": item.research_role.name,
+                "expected_hours": float(item.research_role.expected_hours),
+            },
+            "percentage": float(item.percentage),
+            "calculated_hours": float(item.calculated_hours),
+        }
+        for item in allocation.research_items.all()
+    ]
+
+    admin_items = [
+        {
+            "id": item.id,
+            "admin_role": item.admin_role_id,
+            "admin_role_detail": {
+                "id": item.admin_role.id,
+                "name": item.admin_role.name,
+                "expected_hours": float(item.admin_role.expected_hours),
+            },
+            "percentage": float(item.percentage),
+            "calculated_hours": float(item.calculated_hours),
+        }
+        for item in allocation.admin_items.all()
+    ]
 
     return {
         "academic_id": academic.id,
         "academic_year_id": academic_year_id,
-        "teaching_hours": float(teaching_hours),
-        "research_hours": float(research_hours),
-        "admin_hours": float(admin_hours),
+        "teaching_hours": float(allocation.teaching_hours),
+        "research_hours": float(allocation.research_hours),
+        "admin_hours": float(allocation.admin_hours),
         "total_hours": float(total),
         "capacity_hours": academic.capacity_hours,
         "utilisation": round(
@@ -203,6 +269,9 @@ def get_academic_my_workload(user_id: int, academic_year_id: int) -> Optional[Di
         ),
         "difference": float(total - Decimal(academic.capacity_hours)),
         "status": calculate_status(total, academic.capacity_hours),
+        "teaching_items": teaching_items,
+        "research_items": research_items,
+        "admin_items": admin_items,
     }
 
 
@@ -233,13 +302,14 @@ def get_academic_group_summary(
     user_id: int,
     academic_year_id: int,
 ) -> Optional[Dict[str, Any]]:
-    """Anonymised department distribution. No peer names."""
+    """Anonymised department summary for the logged-in academic.
+    Returns both utilisation buckets and anonymised peer workload rows.
+    """
     try:
         academic = Academic.objects.get(user_id=user_id)
     except Academic.DoesNotExist:
         return None
 
-    # Same department only, anonymised: buckets and counts
     allocations = WorkloadAllocation.objects.filter(
         academic_year_id=academic_year_id,
         academic__department=academic.department,
@@ -247,16 +317,36 @@ def get_academic_group_summary(
     ).select_related("academic")
 
     utilisation_buckets = defaultdict(int)
+    peer_rows: List[Dict[str, Any]] = []
+
     for a in allocations:
         total = calculate_total_hours(a.teaching_hours, a.research_hours, a.admin_hours)
         util = calculate_utilisation(total, a.academic.capacity_hours)
+
         if util < 90:
             bucket = "under_90"
         elif util <= 110:
             bucket = "90_110"
         else:
             bucket = "over_110"
+
         utilisation_buckets[bucket] += 1
+
+        peer_rows.append(
+            {
+                "academic_id": a.academic_id,
+                "is_you": a.academic_id == academic.id,
+                "teaching_hours": round(float(a.teaching_hours), 2),
+                "research_hours": round(float(a.research_hours), 2),
+                "admin_hours": round(float(a.admin_hours), 2),
+                "total_hours": round(float(total), 2),
+                "capacity_hours": a.academic.capacity_hours,
+                "utilisation_pct": round(util, 2),
+                "status": calculate_status(total, a.academic.capacity_hours),
+            }
+        )
+
+    peer_rows.sort(key=lambda r: (-r["total_hours"], r["academic_id"]))
 
     return {
         "department_name": academic.department.name,
@@ -266,4 +356,5 @@ def get_academic_group_summary(
             "90_110": utilisation_buckets["90_110"],
             "over_110": utilisation_buckets["over_110"],
         },
+        "peers": peer_rows,
     }

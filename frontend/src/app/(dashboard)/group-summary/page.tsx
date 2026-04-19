@@ -58,19 +58,21 @@ export default function GroupSummaryPage() {
     );
   }
 
-  const chartData = data?.distribution
-    ? [
-        { name: "Under 90%", count: data.distribution.under_90 },
-        { name: "90–110%", count: data.distribution["90_110"] },
-        { name: "Over 110%", count: data.distribution.over_110 },
-      ]
-    : [];
+  const chartData = (data?.peers ?? []).map((p, index) => ({
+    name: p.is_you ? "You" : `Peer ${index + 1}`,
+    teaching: p.teaching_hours,
+    research: p.research_hours,
+    admin: p.admin_hours,
+    total: p.total_hours,
+    status: p.status,
+    is_you: p.is_you,
+  }));
 
   return (
     <div className="space-y-8">
       <h1 className="text-2xl font-semibold tracking-tight">Group summary</h1>
-      <p className="text-muted-foreground text-sm">
-        Anonymised distribution for your department. No individual names are shown.
+      <p className="text-sm text-muted-foreground">
+        Department workload comparison is anonymised. No individual names are shown.
       </p>
 
       {data && (
@@ -78,22 +80,57 @@ export default function GroupSummaryPage() {
           <CardHeader>
             <CardTitle>{data.department_name}</CardTitle>
             <p className="text-sm text-muted-foreground">
-              Utilisation distribution (count of academics in each bucket)
+              Department workload comparison
             </p>
           </CardHeader>
           <CardContent>
-            {chartData.some((d) => d.count > 0) ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={chartData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-                  <XAxis dataKey="name" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Bar dataKey="count" name="Count" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+            <div className="mb-3 flex justify-end">
+              {chartData.find((d) => d.is_you)?.status && (
+                <span className="inline-flex rounded-full bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-400">
+                  {chartData.find((d) => d.is_you)?.status}
+                </span>
+              )}
+            </div>
+            {chartData.length > 0 ? (
+              <div className="h-[340px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={chartData}
+                    layout="vertical"
+                    margin={{ top: 10, right: 20, left: 20, bottom: 10 }}
+                  >
+                    <XAxis type="number" />
+                    <YAxis
+                      type="category"
+                      dataKey="name"
+                      width={80}
+                      tick={({ x, y, payload }) => (
+                        <text
+                          x={x}
+                          y={y + 4}
+                          textAnchor="end"
+                          fill={payload.value === "You" ? "#ffffff" : "#9ca3af"}
+                          fontWeight={payload.value === "You" ? 700 : 400}
+                        >
+                          {payload.value}
+                        </text>
+                      )}
+                    />
+                    <Tooltip
+                      formatter={(value: number, name: string) => [`${value} hrs`, name]}
+                      labelFormatter={(label) => `${label}`}
+                    />
+                    <Legend />
+                    <Bar dataKey="teaching" stackId="a" fill="#14b8a6" name="Teaching" radius={[0, 0, 0, 0]} />
+                    <Bar dataKey="research" stackId="a" fill="#3b82f6" name="Research" radius={[0, 0, 0, 0]} />
+                    <Bar dataKey="admin" stackId="a" fill="#f59e0b" name="Admin" radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             ) : (
-              <p className="text-sm text-muted-foreground">No allocation data for this year in your department.</p>
+              <p className="text-sm text-muted-foreground">
+                No allocation data for this year in your department.
+              </p>
             )}
           </CardContent>
         </Card>

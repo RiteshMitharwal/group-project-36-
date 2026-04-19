@@ -604,6 +604,40 @@ export interface MyWorkload {
   utilisation: number;
   difference: number;
   status: string;
+  teaching_items: {
+    id: number;
+    module: number;
+    module_detail?: {
+      id: number;
+      code: string | null;
+      name: string;
+      credit_hours: number;
+    };
+    percentage: number;
+    calculated_hours: number;
+  }[];
+  research_items: {
+    id: number;
+    research_role: number;
+    research_role_detail?: {
+      id: number;
+      name: string;
+      expected_hours: number;
+    };
+    percentage: number;
+    calculated_hours: number;
+  }[];
+  admin_items: {
+    id: number;
+    admin_role: number;
+    admin_role_detail?: {
+      id: number;
+      name: string;
+      expected_hours: number;
+    };
+    percentage: number;
+    calculated_hours: number;
+  }[];
 }
 
 export interface HistoryItem {
@@ -615,5 +649,20 @@ export interface HistoryItem {
 export interface GroupSummary {
   department_name: string;
   academic_year_id: number;
-  distribution: { under_90: number; "90_110": number; over_110: number };
+  distribution: {
+    under_90: number;
+    "90_110": number;
+    over_110: number;
+  };
+  peers: {
+    academic_id: number;
+    is_you: boolean;
+    teaching_hours: number;
+    research_hours: number;
+    admin_hours: number;
+    total_hours: number;
+    capacity_hours: number;
+    utilisation_pct: number;
+    status: string;
+  }[];
 }
