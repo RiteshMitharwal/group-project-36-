@@ -1,92 +1,252 @@
-# Minimal Workload Management System
+# Workload Management System
 
-A production-quality SaaS for university operations teams to manage academic workload allocations.
+A production-quality academic workload management system designed to help universities efficiently allocate teaching, research, and administrative responsibilities.
+
+The system ensures fair workload distribution, provides analytical insights, and supports better decision-making for administrators while maintaining transparency for academics.
+
+---
 
 ## Stack
 
-- **Backend:** Django 4.2, Django REST Framework, PostgreSQL, JWT (simplejwt), Docker
-- **Frontend:** Next.js (App Router), TypeScript, TailwindCSS, shadcn/ui, Recharts
+* **Backend:** Django, Django REST Framework, SQLite/PostgreSQL, JWT (SimpleJWT)
+* **Frontend:** Next.js (App Router), TypeScript, TailwindCSS, shadcn/ui, Recharts
 
-## Run without Docker (no Docker required)
+---
 
-**Requirements:** Python 3 and Node.js (npm).
+## Run without Docker (Recommended)
 
-**One command:**
+**Requirements:** Python 3, Node.js
+
+### One Command
+
 ```bash
 cd /path/to/WorkloadManagement
 ./run-local.sh
 ```
-Uses SQLite (no PostgreSQL). Migrations and seed run on first start. Then open **http://localhost:3000** — login: `admin` / `admin123` or `academic1` / `academic123`.
 
-**Two terminals (alternative):**  
-Terminal 1: `cd backend && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && python manage.py migrate --noinput && python manage.py seed_workload && python manage.py runserver 0.0.0.0:8000`  
-Terminal 2: `cd frontend && npm install && NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev`
+* Uses SQLite (no PostgreSQL required)
+* Runs migrations + seed automatically (first time)
+* Open: **http://localhost:3000**
 
 ---
 
-## Run with Docker
+### Manual (Two Terminals)
 
-**1. Install Docker**  
-- **macOS:** [Docker Desktop for Mac](https://docs.docker.com/desktop/install/mac-install/) — install, open the app, wait until it says “Docker is running”.  
-- **Windows:** [Docker Desktop for Windows](https://docs.docker.com/desktop/install/windows-install/).  
-- Then run: `docker --version` and `docker compose version` (or `docker-compose --version`).
+**Terminal 1 — Backend**
 
-**2. Run the app**
-   ```bash
-   cp .env.example .env
-   ./run.sh
-   ```
-   Or: `docker compose up --build` (or `docker-compose up --build`).
-
-**3. Seed (first run only)** — in a new terminal:
-   ```bash
-   docker compose exec backend python manage.py seed_workload
-   ```
-   (Or `docker-compose exec ...` if you use Compose v1.)
-
-**4. Open**  
-- App: http://localhost:3000  
-- API: http://localhost:8000  
-- Login: `admin` / `admin123` or `academic1` / `academic123`
-
-## Development
-
-### Backend (local, SQLite)
 ```bash
 cd backend
-python3 -m venv .venv && source .venv/bin/activate
+python -m venv venv
+venv\Scripts\activate
 pip install -r requirements.txt
-python manage.py migrate --noinput
+
+python manage.py migrate
 python manage.py seed_workload
-python manage.py runserver 0.0.0.0:8000
+python manage.py runserver
 ```
 
-### Frontend (local)
+**Terminal 2 — Frontend**
+
 ```bash
 cd frontend
 npm install
-NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
+npm run dev
 ```
 
-### Tests
+---
+
+## 🔑 Demo Credentials
+
+### Admin
+
+* **Username:** `admin`
+* **Password:** `Admin12345`
+
+### Academic
+
+* **Username:** `TaylorSmith`
+* **Password:** `Ri123456`
+
+---
+
+## Features
+
+### Authentication & Roles
+
+* Secure login using JWT
+* Role-based system:
+
+  * Admin
+  * Academic
+* Protected routes
+
+---
+
+### Academic Dashboard
+
+* Personal workload overview
+* **Pie chart distribution**:
+
+  * Teaching
+  * Research
+  * Admin
+  * Remaining capacity
+* **Capacity & utilisation panel**
+* Detailed breakdown:
+
+  * Teaching modules
+  * Research roles
+  * Admin roles
+
+---
+
+### Group Summary (Anonymised)
+
+* Department-level comparison
+* Stacked bar chart
+* Fully anonymised peers
+* Highlights current user ("You")
+
+---
+
+### Admin Panel
+
+#### Academics
+
+* Create / edit / deactivate academics
+* Assign capacity
+
+#### Modules
+
+* Manage teaching modules
+
+#### Research Roles
+
+* Define research responsibilities
+
+#### Admin Roles
+
+* Define administrative roles
+
+---
+
+### Workload Allocation
+
+* Allocate:
+
+  * Teaching
+  * Research
+  * Admin
+* Automatic workload calculation
+* Edit and view allocations
+
+---
+
+### Allocation History Panel (NEW)
+
+* Displays past workload of selected academic
+* Shows:
+
+  * Year
+  * Teaching / Research / Admin hours
+  * Total
+  * Status
+* Helps better decision making
+
+---
+
+### Allocation Insights (View Panel)
+
+* Detailed breakdown of workload
+* Visual charts for:
+
+  * Teaching
+  * Research
+  * Admin
+
+---
+
+### UI Improvements
+
+* Modern **sidebar layout**
+* Clean dashboard design
+* Improved navigation
+* Dark / Light mode
+
+---
+
+## Development
+
+### Backend
+
 ```bash
-# Backend
-docker-compose exec backend pytest
-# or: cd backend && pytest
-
-# Frontend
-cd frontend && npm run test
+cd backend
+pip install -r requirements.txt
+python manage.py migrate
+python manage.py runserver
 ```
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+---
 
 ## API Overview
 
-- **Auth:** `POST /api/auth/login`, `POST /api/auth/refresh`, `GET /api/auth/me`
-- **Admin CRUD:** departments, academics, modules, eligibility, years
-- **Allocations:** `GET/POST /api/allocations`, `GET/PATCH/DELETE /api/allocations/:id`
-- **Analytics:** admin summary/risk, academic my-workload, history, group-summary
+* **Auth:**
+  `POST /api/auth/login`
+  `POST /api/auth/refresh`
+  `GET /api/auth/me`
 
-Locked academic years prevent create/edit/delete of allocations; viewing is allowed.
+* **Admin:**
+  Manage academics, modules, roles, years
+
+* **Allocations:**
+  `GET /api/allocations`
+  `POST /api/allocations`
+  `PATCH /api/allocations/:id`
+  `DELETE /api/allocations/:id`
+
+* **Analytics:**
+  `my-workload`
+  `history`
+  `group-summary`
+
+---
+
+## Key Concepts
+
+* Capacity-based workload (default ~1500 hrs/year)
+* Utilisation classification:
+
+  * Underloaded (< 90%)
+  * Balanced (90–110%)
+  * Overloaded (> 110%)
+* Historical tracking
+* Anonymised comparison
+
+---
+
+## Future Scope
+
+* Skill-based allocation suggestions
+* Automated balancing
+* Notifications
+* Export reports (PDF/Excel)
+
+---
 
 ## License
 
-Proprietary.
+Proprietary / Academic Use
+
+---
+
+## Author
+
+Ritesh Mitharwal
