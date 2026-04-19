@@ -8,8 +8,8 @@ type User = {
   username: string;
   email: string;
   role: string;
-  is_email_verified: boolean;
-  must_verify_email: boolean;
+  is_email_verified?: boolean;
+  must_verify_email?: boolean;
 };
 
 type AuthState = {

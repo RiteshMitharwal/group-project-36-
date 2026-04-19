@@ -2,7 +2,7 @@ from datetime import timedelta
 import json
 import random
 from urllib import request as urllib_request
-
+from django.core.mail import send_mail
 from django.conf import settings
 from django.utils import timezone
 from rest_framework import generics, serializers, status
@@ -17,6 +17,17 @@ from .serializers import UserSerializer
 
 
 def send_email_via_resend(to_email: str, subject: str, text: str):
+    # Fallback to Django email backend if Resend is not configured
+    if not getattr(settings, "RESEND_API_KEY", "").strip():
+        send_mail(
+            subject=subject,
+            message=text,
+            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@workload.local"),
+            recipient_list=[to_email],
+            fail_silently=False,
+        )
+        return
+
     payload = {
         "from": "noreply@riteshmitharwal.co.uk",
         "to": [to_email],

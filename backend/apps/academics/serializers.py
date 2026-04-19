@@ -49,16 +49,7 @@ class AcademicSerializer(serializers.ModelSerializer):
         return username
 
     def validate_email(self, value):
-        email = value.strip()
-
-        qs = User.objects.filter(email__iexact=email)
-        if self.instance and self.instance.user_id:
-            qs = qs.exclude(pk=self.instance.user_id)
-
-        if qs.exists():
-            raise serializers.ValidationError("A user with this email already exists.")
-
-        return email
+        return (value or "").strip()
 
     def validate(self, attrs):
         user_data = attrs.get("user", {})

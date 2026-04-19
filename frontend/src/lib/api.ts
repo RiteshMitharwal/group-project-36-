@@ -51,7 +51,14 @@ export const api = {
         body: { refresh },
       }),
     me: (token: string) =>
-      request<{ id: number; username: string; email: string; role: string }>("/api/auth/me", { token }),
+  request<{
+    id: number;
+    username: string;
+    email: string;
+    role: string;
+    is_email_verified?: boolean;
+    must_verify_email?: boolean;
+  }>("/api/auth/me", { token }),
   },
   years: {
     list: (token: string) => request<{ results: AcademicYear[] }>("/api/years", { token }),
